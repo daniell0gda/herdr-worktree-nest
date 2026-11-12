@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Open an unnamed herdr space for a new git worktree folder, if needed."""
+import json
+import os
+import subprocess
+import sys
+
+HERDR = os.path.expanduser("~/.local/bin/herdr-app")
+TIMEOUT = 8
+
+
+def run(args, **kw):
+    return subprocess.run(
+        args,
+        text=True,
+        capture_output=True,
+        timeout=TIMEOUT,
+        **kw,
+    )
+
+
+def real(path):
+    try:
+        return os.path.realpath(path)
+    except OSError:
+        return path.rstrip("/")
+
+
+def main():
+    if len(sys.argv) < 2:
+        return 0
+    folder = real(sys.argv[1])
+    if not folder or not os.path.isdir(folder):
+        return 0
+    herdr = HERDR if os.path.isfile(HERDR) else "herdr-app"
+    try:
+        listing = run([herdr, "ls"])
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if listing.returncode != 0 or not listing.stdout.strip():
+        return 0
+    try:
+        data = json.loads(listing.stdout)
+    except json.JSONDecodeError:
+        return 0
+    spaces = data.get("spaces", data) if isinstance(data, dict) else data
+    if not isinstance(spaces, list):
+        return 0
+    for space in spaces:
+        if not isinstance(space, dict):
+            continue
+        for key in ("folder", "path", "cwd"):
+            value = space.get(key)
+            if value and real(value) == folder:
+                return 0
+    try:
+        status = run([herdr, "status"])
+        prev = json.loads(status.stdout) if status.returncode == 0 and status.stdout.strip() else {}
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        prev = {}
+    try:
+        created = run([herdr, "do", "space.new", "--folder", folder])
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if created.returncode != 0:
+        return 0
+    prev_space = prev.get("space")
+    prev_tab = prev.get("tab")
+    if prev_space:
+        try:
+            run([herdr, "do", "space.select", "--id", prev_space])
+            if prev_tab:
+                run([herdr, "do", "tab.select", "--id", prev_tab])
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

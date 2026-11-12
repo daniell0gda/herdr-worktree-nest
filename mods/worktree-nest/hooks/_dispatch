@@ -1,0 +1,46 @@
+#!/bin/sh
+# Shared herdr hooksPath dispatcher. On a brand-new linked worktree
+# (post-checkout with a null previous HEAD), open an unnamed herdr space
+# on that folder if one does not already exist. Then run the repository's
+# own hook of the same name, so Git LFS and other per-repo hooks still run.
+# Never fail the Git command if herdr is down.
+
+hook=$(basename "$0")
+if [ "$hook" = "_dispatch" ]; then
+  exit 0
+fi
+
+PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+is_null_ref() {
+  [ -n "$1" ] || return 1
+  rest=$1
+  while [ -n "$rest" ]; do
+    c=${rest%"${rest#?}"}
+    rest=${rest#?}
+    [ "$c" = "0" ] || return 1
+  done
+  return 0
+}
+
+if [ "$hook" = "post-checkout" ]; then
+  prev=$1
+  flag=${3:-1}
+  if is_null_ref "$prev" && [ "$flag" = "1" ]; then
+    top=$(git rev-parse --show-toplevel 2>/dev/null) || top=
+    common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=
+    if [ -n "$top" ] && [ -n "$common" ] && [ "$common" != "$top/.git" ]; then
+      hook_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+      if [ -x "$hook_dir/_open-space" ]; then
+        "$hook_dir/_open-space" "$top" || true
+      fi
+    fi
+  fi
+fi
+
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+repo_hook="$common/hooks/$hook"
+if [ -f "$repo_hook" ] && [ -x "$repo_hook" ]; then
+  exec "$repo_hook" "$@"
+fi
+exit 0
