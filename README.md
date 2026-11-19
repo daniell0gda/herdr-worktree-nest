@@ -1,80 +1,37 @@
 # herdr-worktree-nest
 
-A small [herdr-app](https://herdr.dev) mod. When you run `git worktree add`, it opens a new herdr space for the new folder. The Spaces sidebar then shows that space under its repo.
+A personal [herdr-app](https://herdr.dev) mod. When `git worktree add` creates a linked worktree, it opens an unnamed herdr space on that folder so the shipped Spaces sidebar can nest it under the repo. It does not choose where worktrees are created.
 
-## Features
+The mod registers a global Git config hook (`hook.worktree-nest.*`). Git runs it for every repository, in addition to the repository's own hooks. A repository can set its own `core.hooksPath` (for example husky) and the hook still runs. If that folder already has a space, nothing is added.
 
-- Opens a herdr space automatically for every new git worktree.
-- Nests the new space under its repo in the Spaces sidebar.
-- Works in every repo on your machine. You do not set it up per repo.
-- Does not add a second space if the folder already has one.
-- Keeps your focus. After it opens the new space, it switches back to the space and tab you were using.
-- Still runs each repo's own hooks (for example Git LFS).
-- Never breaks a git command. If herdr is not running, git continues as normal.
-- Does not choose where worktrees are created.
-
-## Requirements
-
-- [herdr-app](https://herdr.dev)
-- git
-- Python 3
-- Linux or macOS
+It needs a Git version with config-based hooks (tested with 2.56).
 
 ## Install
 
-1. Clone the repo and link the mod into herdr:
-
-   ```sh
-   git clone https://github.com/daniell0gda/herdr-worktree-nest.git
-   cd herdr-worktree-nest
-   ln -sfn "$PWD/mods/worktree-nest" ~/.config/herdr-app/mods/worktree-nest
-   ```
-
-2. Check that herdr accepts the mod:
-
-   ```sh
-   herdr-app check ~/.config/herdr-app/mods/worktree-nest
-   ```
-
-3. Tell git to use the mod's hooks:
-
-   ```sh
-   git config --global core.hooksPath ~/.config/herdr-app/mods/worktree-nest/hooks
-   ```
-
-   If `core.hooksPath` is already set to something else, do not overwrite it. Overwriting it would skip your other global hooks. Call this mod's hook from your existing hooks folder instead.
-
-4. Optional: add this hidden block to your herdr layout. The mod then keeps `core.hooksPath` set for you.
-
-   ```json
-   {
-     "id": "worktree-nest",
-     "type": "block",
-     "content": { "mod": "worktree-nest" },
-     "hidden": true,
-     "size": { "px": 0 }
-   }
-   ```
-
-   The hook works without this block once `core.hooksPath` is set.
-
-## Use
-
-Create a worktree as usual:
-
 ```sh
-git worktree add ../my-feature my-feature
+ln -sfn "$PWD/mods/worktree-nest" ~/.config/herdr-app/mods/worktree-nest
+herdr-app check ~/.config/herdr-app/mods/worktree-nest
 ```
 
-A new herdr space opens for `../my-feature`.
+Add a hidden block to your layout so the mod can keep the Git config hook installed:
 
-A new space nests under a project space only when that space's first terminal (or folder) is the repo's main checkout.
-
-## Uninstall
-
-```sh
-git config --global --unset core.hooksPath
-rm ~/.config/herdr-app/mods/worktree-nest
+```json
+{
+  "id": "worktree-nest",
+  "type": "block",
+  "content": { "mod": "worktree-nest" },
+  "hidden": true,
+  "size": { "px": 0 }
+}
 ```
 
-Remove the hidden block from your layout too, if you added it.
+Without the layout block, add the hook yourself:
+
+```sh
+git config --global hook.worktree-nest.event post-checkout
+git config --global hook.worktree-nest.command ~/.config/herdr-app/mods/worktree-nest/scripts/on-checkout
+```
+
+The mod removes an older global `core.hooksPath` that pointed at this mod's `hooks` folder.
+
+A new space opens for any repository. It nests under a project space only when that space's first terminal (or folder) is the repo's main checkout.

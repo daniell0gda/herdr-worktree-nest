@@ -1,40 +1,43 @@
-// Keeps a shared Git hooksPath installed so a new linked worktree opens
+// Keeps a global Git config hook installed so a new linked worktree opens
 // an unnamed herdr space (and can nest under its repo). Does not change
 // where worktrees are created.
 import { View, div } from "gpui-kit";
-import { exec, appHome, notify, shared, setShared } from "herdr";
+import { exec, appHome } from "herdr";
+
+const HOOK_NAME = "worktree-nest";
+const HOOK_EVENT = "post-checkout";
 
 export default class WorktreeNest extends View {
   init(_props, cx) {
     cx.spawn(async () => {
-      await this.ensureHooksPath();
+      await this.removeLegacyHooksPath();
+      await this.ensureGlobalConfig(`hook.${HOOK_NAME}.event`, HOOK_EVENT);
+      await this.ensureGlobalConfig(`hook.${HOOK_NAME}.command`, this.hookScript());
     });
   }
 
-  hooksDir() {
+  hookScript() {
+    return `${appHome()}/mods/worktree-nest/scripts/on-checkout`;
+  }
+
+  legacyHooksDir() {
     return `${appHome()}/mods/worktree-nest/hooks`;
   }
 
-  async ensureHooksPath() {
-    const dir = this.hooksDir();
-    const got = await exec("git", ["config", "--global", "--get", "core.hooksPath"]);
-    const current = (got.stdout || "").trim();
-    const home = ((await exec("sh", ["-c", "printf %s \"$HOME\""])).stdout || "").replace(/\/$/, "");
-    const resolved = current.replace(/^~(?=\/|$)/, home).replace(/\/$/, "");
-    const ours = dir.replace(/\/$/, "");
-    if (!current) {
-      await exec("git", ["config", "--global", "core.hooksPath", dir]);
-      return;
-    }
-    if (resolved === ours) return;
-    if (shared("worktree-nest.hooksPathWarned") === current) return;
-    setShared("worktree-nest.hooksPathWarned", current);
-    notify({
-      title: "Worktree nest: Git hooksPath is already set",
-      body: `core.hooksPath is ${current}, so new worktrees will not auto-open as herdr spaces.`,
-      level: "warning",
-      timeout: 8000,
-    });
+  async readGlobalConfig(args) {
+    const result = await exec("git", ["config", "--global", ...args]);
+    return (result.stdout || "").trim();
+  }
+
+  async ensureGlobalConfig(key, value) {
+    if ((await this.readGlobalConfig(["--get-all", key])) === value) return;
+    await exec("git", ["config", "--global", "--replace-all", key, value]);
+  }
+
+  async removeLegacyHooksPath() {
+    const current = await this.readGlobalConfig(["--type=path", "--get", "core.hooksPath"]);
+    if (current.replace(/\/$/, "") !== this.legacyHooksDir()) return;
+    await exec("git", ["config", "--global", "--unset", "core.hooksPath"]);
   }
 
   render() {
